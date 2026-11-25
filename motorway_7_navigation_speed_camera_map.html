@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Motorway 7 Navigation & Speed Camera Alert - แผนที่นำทางมอเตอร์เวย์สาย 7</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Prompt & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700;800&family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Prompt', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    animation: {
+                        'pulse-fast': 'pulse 0.65s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #e5e3df; /* Google Maps base land tone */
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        canvas {
+            display: block;
+            touch-action: none;
+        }
+        /* Custom Scrollbar for Timeline Drawer */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(100, 116, 139, 0.35);
+            border-radius: 9999px;
+        }
+        /* Google Maps Style Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 22px;
+            width: 22px;
+            border-radius: 50%;
+            background: #1a73e8;
+            cursor: pointer;
+            margin-top: -8px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+            border: 3px solid #ffffff;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        .dark-map input[type=range]::-webkit-slider-runnable-track {
+            background: #334155;
+        }
+    </style>
+</head>
+<body class="relative w-full h-full flex flex-col">
+
+    <!-- FULLSCREEN GOOGLE MAPS STYLE VECTOR CANVAS -->
+    <canvas id="map-canvas" class="absolute inset-0 w-full h-full z-0 cursor-grab active:cursor-grabbing"></canvas>
+
+    <!-- TOP GOOGLE NAVIGATION TURN-BY-TURN / ALERT BANNER -->
+    <header class="relative z-20 pointer-events-none p-2.5 sm:p-4 flex flex-col items-center">
+        <div class="w-full max-w-5xl flex flex-col sm:flex-row items-stretch sm:items-start justify-between gap-2.5">
+            
+            <!-- Primary Navigation Instruction Card (Google Maps Green/Dark Bar) -->
+            <div id="nav-banner" class="pointer-events-auto flex-1 bg-[#0f5338] text-white rounded-2xl shadow-xl border border-white/15 px-4 py-3 flex items-center justify-between gap-3 transition-colors duration-300">
+                <div class="flex items-center gap-3.5 min-w-0">
+                    <!-- Direction / Alert Icon Box -->
+                    <div id="nav-icon-box" class="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/15 flex flex-col items-center justify-center shrink-0">
+                        <i id="nav-icon" class="fa-solid fa-arrow-up text-2xl sm:text-3xl"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-2">
+                            <span id="nav-distance" class="font-mono text-xl sm:text-2xl font-extrabold tracking-tight">500 ม.</span>
+                            <span id="nav-highway-badge" class="px-2 py-0.5 rounded bg-blue-600 text-white font-bold text-[11px] tracking-wide border border-white/40 shadow-sm">
+                                ทางหลวงพิเศษ 7
+                            </span>
+                        </div>
+                        <div id="nav-title" class="text-sm sm:text-base font-semibold truncate mt-0.5">
+                            มุ่งหน้า ด่านลาดกระบัง (กม.26+500)
+                        </div>
+                        <div id="nav-subtitle" class="text-xs text-emerald-100/85 truncate">
+                            ชะลอความเร็วเข้าด่านเก็บเงิน (จำกัด 60 กม./ชม.)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Side: Current KM Pill & Audio/Map Theme Controls -->
+                <div class="flex items-center gap-2 shrink-0">
+                    <div class="hidden md:flex flex-col items-end bg-black/25 px-3 py-1.5 rounded-xl border border-white/10">
+                        <span class="text-[10px] text-white/75 uppercase">ตำแหน่งปัจจุบัน</span>
+                        <span id="top-km-readout" class="font-mono text-base font-extrabold text-white">กม. 26+000</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Floating Map Utility Buttons (Top Right) -->
+            <div class="pointer-events-auto flex items-center justify-end gap-2">
+                <!-- Direction Toggle -->
+                <button id="btn-direction" onclick="toggleDirection()" class="h-11 px-3.5 rounded-2xl bg-white/95 hover:bg-white text-slate-800 shadow-lg border border-slate-200/80 flex items-center gap-2 text-xs font-semibold transition">
+                    <i id="dir-icon" class="fa-solid fa-route text-[#1a73e8]"></i>
+                    <span id="dir-label">ขาออก (กทม.→พัทยา)</span>
+                </button>
+
+                <!-- Day / Night Map Mode Toggle -->
+                <button id="btn-theme" onclick="toggleMapTheme()" title="สลับโหมดแผนที่กลางวัน/กลางคืน" class="w-11 h-11 rounded-2xl bg-white/95 hover:bg-white text-slate-700 shadow-lg border border-slate-200/80 flex items-center justify-center transition">
+                    <i id="theme-icon" class="fa-solid fa-moon text-base"></i>
+                </button>
+
+                <!-- Voice / Beep Alert Toggle -->
+                <button id="btn-audio" onclick="toggleAudio()" title="เปิด/ปิดเสียงแจ้งเตือน" class="h-11 px-3.5 rounded-2xl bg-[#1a73e8] hover:bg-blue-700 text-white shadow-lg flex items-center gap-2 text-xs font-semibold transition">
+                    <i id="audio-icon" class="fa-solid fa-volume-high"></i>
+                    <span class="hidden sm:inline" id="audio-label">เสียงเตือนเปิด</span>
+                </button>
+
+                <!-- Toggle Timeline Drawer Button -->
+                <button onclick="toggleDrawer()" title="แสดงรายการด่านและกล้องทั้งหมด" class="h-11 px-3.5 rounded-2xl bg-white/95 hover:bg-white text-slate-800 shadow-lg border border-slate-200/80 flex items-center gap-2 text-xs font-semibold transition">
+                    <i class="fa-solid fa-list-ul text-[#1a73e8]"></i>
+                    <span class="hidden md:inline">รายการจุดตรวจ</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- FLOATING MAP CONTROLS (ZOOM & RECENTER ON RIGHT SIDE) -->
+    <div class="fixed right-3 sm:right-5 top-1/2 -translate-y-1/2 z-20 flex flex-col gap-2">
+        <!-- Recenter / Auto-Follow Button -->
+        <button id="btn-recenter" onclick="recenterMap()" title="ติดตามตำแหน่งรถอัตโนมัติ" class="w-11 h-11 rounded-full bg-white text-[#1a73e8] shadow-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition">
+            <i class="fa-solid fa-location-crosshairs text-lg"></i>
+        </button>
+
+        <!-- Zoom In / Out Group -->
+        <div class="flex flex-col rounded-2xl bg-white shadow-xl border border-slate-200 overflow-hidden">
+            <button onclick="zoomMap(1.25)" title="ซูมเข้า" class="w-11 h-11 text-slate-700 hover:bg-slate-100 flex items-center justify-center border-b border-slate-200 transition">
+                <i class="fa-solid fa-plus"></i>
+            </button>
+            <button onclick="zoomMap(0.8)" title="ซูมออก" class="w-11 h-11 text-slate-700 hover:bg-slate-100 flex items-center justify-center transition">
+                <i class="fa-solid fa-minus"></i>
+            </button>
+        </div>
+
+        <!-- Test Voice Alert Button -->
+        <button onclick="testAudioAlert()" title="ทดสอบเสียงพูดแจ้งเตือน" class="w-11 h-11 rounded-full bg-white text-slate-700 shadow-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition">
+            <i class="fa-solid fa-bullhorn text-sm"></i>
+        </button>
+    </div>
+
+    <!-- READ-ONLY ROUTE TIMELINE DRAWER (SLIDE-OVER PANEL) -->
+    <aside id="timeline-drawer" class="fixed top-20 right-3 sm:right-5 bottom-44 sm:bottom-36 w-80 sm:w-96 z-20 bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-slate-200/90 flex flex-col overflow-hidden transition-all duration-300 translate-x-[120%] opacity-0">
+        <div class="px-4 py-3.5 bg-slate-900 text-white flex items-center justify-between">
+            <div>
+                <div class="flex items-center gap-2">
+                    <span class="px-2 py-0.5 rounded bg-blue-600 text-[10px] font-bold">M7</span>
+                    <h2 class="font-bold text-sm">เส้นทางมอเตอร์เวย์สาย 7</h2>
+                </div>
+                <p class="text-[11px] text-slate-300 mt-0.5">กม.26+000 – กม.120+000 (ข้อมูลคงที่)</p>
+            </div>
+            <button onclick="toggleDrawer()" class="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white">
+                <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="flex p-1.5 bg-slate-100 border-b border-slate-200 text-xs font-medium">
+            <button onclick="setFilter('all')" id="filter-all" class="flex-1 py-1.5 rounded-xl bg-white text-slate-900 shadow-sm">ทั้งหมด (14)</button>
+            <button onclick="setFilter('camera')" id="filter-camera" class="flex-1 py-1.5 rounded-xl text-slate-600 hover:text-slate-900">กล้องจับความเร็ว</button>
+            <button onclick="setFilter('toll')" id="filter-toll" class="flex-1 py-1.5 rounded-xl text-slate-600 hover:text-slate-900">ด่านเก็บเงิน</button>
+        </div>
+
+        <!-- Read-only List -->
+        <div id="timeline-list" class="flex-1 overflow-y-auto p-3 space-y-2">
+            <!-- Injected via JS -->
+        </div>
+    </aside>
+
+    <!-- BOTTOM NAVIGATION HUD: SPEEDOMETER + SIMULATION CONTROLS -->
+    <footer class="mt-auto relative z-20 pointer-events-none p-2.5 sm:p-4">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-stretch md:items-end justify-between gap-3">
+            
+            <!-- BOTTOM-LEFT: GOOGLE MAPS SPEEDOMETER & LEGAL SPEED LIMIT SIGN -->
+            <div class="pointer-events-auto flex items-center gap-2.5 self-start">
+                <!-- Digital Speedometer Circle/Pill -->
+                <div id="speed-widget" class="bg-white/95 backdrop-blur-md border-2 border-slate-200 rounded-3xl px-4 py-2.5 shadow-2xl flex items-center gap-3.5 transition-all duration-200">
+                    <div class="text-center min-w-[64px]">
+                        <div id="hud-speed" class="font-mono text-3xl sm:text-4xl font-extrabold text-slate-900 leading-none">0</div>
+                        <div class="text-[10px] font-bold text-slate-500 uppercase mt-1">กม./ชม.</div>
+                    </div>
+
+                    <!-- Thai Highway Speed Limit Sign (Red Circle) -->
+                    <div id="limit-sign" class="w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-white border-[5px] border-red-600 flex flex-col items-center justify-center shadow-md shrink-0">
+                        <span id="limit-value" class="font-mono text-lg sm:text-xl font-extrabold text-slate-950 leading-none">60</span>
+                        <span class="text-[8px] font-bold text-slate-600">MAX</span>
+                    </div>
+
+                    <!-- Mobile KM Indicator -->
+                    <div class="md:hidden border-l border-slate-200 pl-3">
+                        <div class="text-[10px] text-slate-400">หลัก กม.</div>
+                        <div id="mobile-km-readout" class="font-mono text-sm font-bold text-slate-800">กม.26+000</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BOTTOM-CENTER/RIGHT: DRIVING SIMULATOR CONTROL BAR -->
+            <div class="pointer-events-auto flex-1 max-w-3xl bg-white/95 backdrop-blur-md border border-slate-200/90 rounded-3xl p-3 sm:p-3.5 shadow-2xl flex flex-col gap-2.5">
+                
+                <!-- Top Row: Play/Pause, Speed Slider & Time Multiplier -->
+                <div class="flex flex-wrap items-center gap-2.5 sm:gap-3">
+                    <!-- Play/Pause Button -->
+                    <button id="btn-sim-toggle" onclick="toggleSimulation()" class="h-10 px-4 rounded-2xl bg-[#1a73e8] hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md flex items-center gap-2 shrink-0 transition">
+                        <i id="sim-play-icon" class="fa-solid fa-play"></i>
+                        <span id="sim-play-text">เริ่มขับจำลอง</span>
+                    </button>
+
+                    <!-- Speed Slider (0 - 160 km/h) -->
+                    <div class="flex-1 min-w-[140px] flex items-center gap-2.5 bg-slate-100 px-3 py-1.5 rounded-2xl border border-slate-200/80">
+                        <i class="fa-solid fa-gauge-high text-slate-500 text-xs"></i>
+                        <input id="speed-slider" type="range" min="0" max="160" value="0" oninput="setTargetSpeed(this.value)" class="w-full">
+                        <span id="slider-speed-label" class="font-mono text-xs font-bold text-slate-800 w-14 text-right shrink-0">0 กม./ชม.</span>
+                    </div>
+
+                    <!-- Simulation Time Scale (1x, 5x, 10x) -->
+                    <div class="flex items-center bg-slate-100 p-1 rounded-2xl border border-slate-200/80 shrink-0">
+                        <button onclick="setTimeScale(1)" id="scale-1" class="px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-[#1a73e8] text-white transition">1x</button>
+                        <button onclick="setTimeScale(5)" id="scale-5" class="px-2.5 py-1 rounded-xl text-xs font-mono font-bold text-slate-600 hover:text-slate-900 transition">5x</button>
+                        <button onclick="setTimeScale(10)" id="scale-10" class="px-2.5 py-1 rounded-xl text-xs font-mono font-bold text-slate-600 hover:text-slate-900 transition">10x</button>
+                    </div>
+                </div>
+
+                <!-- Bottom Row: Quick Cruise Speeds & Jump Presets -->
+                <div class="flex items-center justify-between gap-2 overflow-x-auto pb-0.5">
+                    <!-- Quick Speed Buttons -->
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <span class="text-[11px] font-medium text-slate-500 mr-0.5">ความเร็ว:</span>
+                        <button onclick="setTargetSpeed(0)" class="px-2.5 py-1 rounded-xl bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold text-xs transition">เบรก</button>
+                        <button onclick="setTargetSpeed(60)" class="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-mono font-bold text-xs transition">60</button>
+                        <button onclick="setTargetSpeed(80)" class="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-mono font-bold text-xs transition">80</button>
+                        <button onclick="setTargetSpeed(120)" class="px-2.5 py-1 rounded-xl bg-blue-100 hover:bg-blue-200 text-blue-800 font-mono font-bold text-xs transition">120</button>
+                        <button onclick="setTargetSpeed(140)" class="px-2.5 py-1 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-800 font-mono font-bold text-xs transition">140</button>
+                    </div>
+
+                    <!-- Quick Jump Points -->
+                    <div class="flex items-center gap-1.5 shrink-0 border-l border-slate-200 pl-2">
+                        <span class="text-[11px] font-medium text-slate-500">จุดเริ่มด่วน:</span>
+                        <button onclick="jumpToKm(26.0, 90)" class="px-2.5 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[11px] font-semibold transition">
+                            ก่อนด่านลาดกระบัง (กม.26+000)
+                        </button>
+                        <button onclick="jumpToKm(43.5, 125)" class="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition">
+                            ข้ามแม่น้ำบางปะกง (กม.43+500)
+                        </button>
+                        <button onclick="jumpToKm(71.0, 95)" class="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition">
+                            ด่านบ้านบึง (กม.71+000)
+                        </button>
+                        <button onclick="jumpToKm(115.8, 90)" class="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-medium transition">
+                            ด่านโป่ง (กม.115+800)
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notification (No alert() used) -->
+    <div id="toast-box" class="fixed top-24 left-1/2 -translate-x-1/2 z-50 transform -translate-y-10 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="bg-slate-900/95 text-white px-4 py-2.5 rounded-full shadow-2xl border border-white/15 flex items-center gap-2.5 text-xs sm:text-sm font-medium">
+            <i class="fa-solid fa-circle-info text-blue-400"></i>
+            <span id="toast-msg">แจ้งเตือน</span>
+        </div>
+    </div>
+
+    <script>
+        // =========================================================================
+        // 1. LOCKED GEOGRAPHIC POLYLINE OF MOTORWAY ROUTE 7 (KM 26.0 - KM 120.0)
+        //    Real-world Lat/Lng curvature from Lat Krabang -> Bang Pakong -> Chon Buri -> Pong/Pattaya
+        // =========================================================================
+        const ROUTE_WAYPOINTS = [
+            { km: 26.0,  lat: 13.7225, lng: 100.7850, label: 'จุดเริ่มต้น กม.26 (ลาดกระบัง)' },
+            { km: 26.5,  lat: 13.7208, lng: 100.7905 }, // ด่านลาดกระบัง
+            { km: 27.9,  lat: 13.7155, lng: 100.8035 }, // กล้องจุดที่ 14
+            { km: 32.0,  lat: 13.6980, lng: 100.8400 },
+            { km: 35.2,  lat: 13.6835, lng: 100.8685 }, // กล้องช่วงบางเสาธง
+            { km: 39.0,  lat: 13.6660, lng: 100.9020 }, // ด่านบางบ่อ
+            { km: 44.5,  lat: 13.6380, lng: 100.9495 }, // กล้องก่อนข้ามแม่น้ำบางปะกง
+            { km: 46.2,  lat: 13.6285, lng: 100.9645 }, // สะพานข้ามแม่น้ำบางปะกง
+            { km: 48.0,  lat: 13.6160, lng: 100.9780 }, // ด่านบางปะกง
+            { km: 53.0,  lat: 13.5750, lng: 101.0060 },
+            { km: 57.0,  lat: 13.5410, lng: 101.0235 }, // จุดพักรถมอเตอร์เวย์ & กล้อง
+            { km: 62.0,  lat: 13.4980, lng: 101.0365 },
+            { km: 66.0,  lat: 13.4630, lng: 101.0445 }, // ด่านพนัสนิคม
+            { km: 72.0,  lat: 13.4095, lng: 101.0535 }, // ด่านบ้านบึง
+            { km: 78.0,  lat: 13.3560, lng: 101.0510 }, // ด่านบางพระ
+            { km: 84.0,  lat: 13.3025, lng: 101.0390 },
+            { km: 89.5,  lat: 13.2535, lng: 101.0255 }, // กล้องช่วงศรีราชา
+            { km: 95.0,  lat: 13.2040, lng: 101.0125 },
+            { km: 99.0,  lat: 13.1680, lng: 101.0035 }, // ด่านหนองขาม
+            { km: 104.0, lat: 13.1235, lng: 100.9945 },
+            { km: 108.0, lat: 13.0875, lng: 100.9885 }, // กล้องช่วงบางละมุง
+            { km: 113.0, lat: 13.0425, lng: 100.9830 },
+            { km: 117.0, lat: 13.0065, lng: 100.9795 }, // ด่านโป่ง
+            { km: 120.0, lat: 12.9795, lng: 100.9775 }  // มุ่งหน้าพัทยา / มาบตาพุด
+        ];
+
+        // =========================================================================
+        // 2. LOCKED IMMUTABLE DATABASE OF TOLL PLAZAS & SPEED CAMERAS
+        // =========================================================================
+        const LOCKED_POIS = Object.freeze([
+            { id: 'toll-latkrabang', type: 'toll',   km: 26.5,  name: 'ด่านลาดกระบัง',                  limit: 60,  desc: 'ชะลอความเร็วเข้าด่านเก็บเงิน' },
+            { id: 'cam-14',          type: 'camera', km: 27.9,  name: 'กล้องตรวจจับความเร็ว จุดที่ 14',   limit: 120, desc: 'ห่างจากด่านลาดกระบัง 1.4 กม.' },
+            { id: 'cam-bangsaothong',type: 'camera', km: 35.2,  name: 'กล้องตรวจจับความเร็ว ช่วงบางเสาธง', limit: 120, desc: 'จำกัดความเร็ว 120 กม./ชม.' },
+            { id: 'toll-bangbo',     type: 'toll',   km: 39.0,  name: 'ด่านบางบ่อ',                      limit: 80,  desc: 'ทางออก/ทางร่วม ด่านบางบ่อ' },
+            { id: 'cam-bangpakong',  type: 'camera', km: 44.5,  name: 'กล้องตรวจจับความเร็ว ก่อนข้ามแม่น้ำบางปะกง', limit: 120, desc: 'จำกัดความเร็ว 120 กม./ชม.' },
+            { id: 'toll-bangpakong', type: 'toll',   km: 48.0,  name: 'ด่านบางปะกง',                    limit: 80,  desc: 'ทางออก/ทางร่วม ด่านบางปะกง' },
+            { id: 'cam-restarea',    type: 'camera', km: 57.0,  name: 'จุดพักรถมอเตอร์เวย์ & กล้องตรวจจับความเร็ว', limit: 120, desc: 'Motorway Rest Area บางปะกง' },
+            { id: 'toll-phanat',     type: 'toll',   km: 66.0,  name: 'ด่านพนัสนิคม',                    limit: 80,  desc: 'ทางออก/ทางร่วม ด่านพนัสนิคม' },
+            { id: 'toll-banbueng',   type: 'toll',   km: 72.0,  name: 'ด่านบ้านบึง',                     limit: 80,  desc: 'ทางออก/ทางร่วม ด่านบ้านบึง' },
+            { id: 'toll-bangphra',   type: 'toll',   km: 78.0,  name: 'ด่านบางพระ',                     limit: 80,  desc: 'ทางออก/ทางร่วม ด่านบางพระ' },
+            { id: 'cam-sriracha',    type: 'camera', km: 89.5,  name: 'กล้องตรวจจับความเร็ว ช่วงศรีราชา',  limit: 120, desc: 'จำกัดความเร็ว 120 กม./ชม.' },
+            { id: 'toll-nongkham',   type: 'toll',   km: 99.0,  name: 'ด่านหนองขาม',                    limit: 80,  desc: 'ทางออก/ทางร่วม ด่านหนองขาม' },
+            { id: 'cam-banglamung',  type: 'camera', km: 108.0, name: 'กล้องตรวจจับความเร็ว ช่วงบางละมุง', limit: 120, desc: 'จำกัดความเร็ว 120 กม./ชม.' },
+            { id: 'toll-pong',       type: 'toll',   km: 117.0, name: 'ด่านโป่ง',                        limit: 60,  desc: 'สิ้นสุดช่วงเก็บเงินหลัก' }
+        ]);
+
+        // Map Geographic Context Features (Interchanges, Cities, River, Connecting Highways)
+        const MAP_LANDMARKS = [
+            { lat: 13.7320, lng: 100.7720, text: 'ท่าอากาศยานสุวรรณภูมิ', icon: 'plane', type: 'poi' },
+            { lat: 13.7260, lng: 100.7680, text: 'ต่างระดับทับช้าง (วงแหวน 9)', badge: '9', type: 'interchange' },
+            { lat: 13.6880, lng: 100.8950, text: 'อ.บางบ่อ จ.สมุทรปราการ', type: 'district' },
+            { lat: 13.6210, lng: 100.9920, text: 'อ.บางปะกง จ.ฉะเชิงเทรา', type: 'district' },
+            { lat: 13.5420, lng: 101.0360, text: 'จุดพักรถมอเตอร์เวย์ (Rest Area)', icon: 'coffee', type: 'poi' },
+            { lat: 13.4580, lng: 101.0120, text: 'ทางแยกไป จ.ชลบุรี / พนัสนิคม', badge: '315', type: 'interchange' },
+            { lat: 13.4050, lng: 101.0720, text: 'ต่างระดับบ้านบึง (ทล.344)', badge: '344', type: 'interchange' },
+            { lat: 13.3480, lng: 101.0150, text: 'อ่างเก็บน้ำบางพระ', type: 'water_label' },
+            { lat: 13.2480, lng: 100.9750, text: 'อ.ศรีราชา', type: 'district' },
+            { lat: 13.1620, lng: 100.9650, text: 'ต่างระดับหนองขาม (ท่าเรือแหลมฉบัง)', badge: '7', type: 'interchange' },
+            { lat: 13.0010, lng: 100.9550, text: 'ต่างระดับโป่ง (ทล.36 ไประยอง)', badge: '36', type: 'interchange' },
+            { lat: 12.9680, lng: 100.9450, text: 'เมืองพัทยา (Pattaya)', type: 'city' }
+        ];
+
+        // =========================================================================
+        // 3. APPLICATION & MAP CAMERA STATE
+        // =========================================================================
+        const state = {
+            currentKm: 26.0,
+            currentSpeed: 0,
+            targetSpeed: 0,
+            direction: 'outbound', // 'outbound' (26->120) or 'inbound' (120->26)
+            isRunning: false,
+            timeScale: 1,
+            audioEnabled: true,
+            darkMode: false,
+            drawerOpen: false,
+            filter: 'all',
+            lastFrameTime: null,
+            announced1km: new Set(),
+            announced400m: new Set(),
+            lastBeepTime: 0
+        };
+
+        // Map Camera & Pan/Zoom State
+        const mapView = {
+            centerLat: 13.7225,
+            centerLng: 100.7850,
+            zoom: 13.6,          // Google Maps zoom level equivalent (10 to 16.5)
+            autoFollow: true,    // Locks camera onto navigation arrow
+            isDragging: false,
+            dragStartX: 0,
+            dragStartY: 0,
+            dragStartLat: 0,
+            dragStartLng: 0
+        };
+
+        const canvas = document.getElementById('map-canvas');
+        const ctx = canvas.getContext('2d');
+        let audioCtx = null;
+
+        // =========================================================================
+        // 4. GEOGRAPHIC INTERPOLATION & MAP PROJECTION HELPERS
+        // =========================================================================
+        // Interpolate Lat, Lng, and Heading Angle (radians) for any KM on Route 7
+        function getGeoAtKm(km) {
+            const clampedKm = Math.max(26.0, Math.min(120.0, km));
+            for (let i = 0; i < ROUTE_WAYPOINTS.length - 1; i++) {
+                const p1 = ROUTE_WAYPOINTS[i];
+                const p2 = ROUTE_WAYPOINTS[i + 1];
+                if (clampedKm >= p1.km && clampedKm <= p2.km) {
+                    const t = (clampedKm - p1.km) / (p2.km - p1.km);
+                    const lat = p1.lat + (p2.lat - p1.lat) * t;
+                    const lng = p1.lng + (p2.lng - p1.lng) * t;
+                    
+                    // Calculate screen-space heading angle
+                    const s1 = latLngToScreen(p1.lat, p1.lng);
+                    const s2 = latLngToScreen(p2.lat, p2.lng);
+                    let angle = Math.atan2(s2.y - s1.y, s2.x - s1.x);
+                    if (state.direction === 'inbound') angle += Math.PI;
+                    
+                    return { lat, lng, angle };
+                }
+            }
+            const last = ROUTE_WAYPOINTS[ROUTE_WAYPOINTS.length - 1];
+            return { lat: last.lat, lng: last.lng, angle: Math.PI / 2 };
+        }
+
+        // Convert Geographic (Lat, Lng) to Canvas Pixel (X, Y) using Web Mercator scale
+        function latLngToScreen(lat, lng) {
+            const scale = Math.pow(2, mapView.zoom) * 256 / 360;
+            const cosLat = Math.cos(13.4 * Math.PI / 180); // Thailand latitude factor
+            const x = (lng - mapView.centerLng) * scale * cosLat + canvas.width / 2;
+            const y = (mapView.centerLat - lat) * scale + canvas.height / 2;
+            return { x, y };
+        }
+
+        function formatKm(kmVal) {
+            const whole = Math.floor(kmVal);
+            const meters = Math.round((kmVal - whole) * 1000);
+            return `กม.${whole}+${meters.toString().padStart(3, '0')}`;
+        }
+
+        // =========================================================================
+        // 5. GOOGLE MAPS VECTOR RENDERER (CANVAS)
+        // =========================================================================
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            drawMap();
+        }
+
+        function drawMap() {
+            const w = canvas.width;
+            const h = canvas.height;
+            const isDark = state.darkMode;
+
+            // 1. Base Map Land Background (Google Maps Classic Beige vs Navigation Night Slate)
+            ctx.fillStyle = isDark ? '#17202e' : '#ebe9e4';
+            ctx.fillRect(0, 0, w, h);
+
+            // 2. Subtle Suburban/District Grid Blocks (Google Maps aesthetic)
+            drawMapBlocks(isDark);
+
+            // 3. Gulf of Thailand Coastline & Bang Pakong River & Bang Phra Reservoir
+            drawWaterFeatures(isDark);
+
+            // 4. Secondary Highways (Motorway 9, Highway 3, 344, 36, 315)
+            drawSecondaryRoads(isDark);
+
+            // 5. Motorway Route 7 Main Highway + Live Traffic Colors
+            drawMotorway7(isDark);
+
+            // 6. Map Landmarks, Interchanges & Highway Shields
+            drawLandmarks(isDark);
+
+            // 7. Locked Toll Plazas & Speed Camera Pins (Google Maps Pin Style)
+            drawPoiPins(isDark);
+
+            // 8. Navigation Car Arrow (Blue Chevron in White Circle + Radar Pulse)
+            drawNavigationArrow();
+        }
+
+        function drawMapBlocks(isDark) {
+            // Draw soft green parks/agricultural zones & urban blocks
+            const zones = [
+                { lat: 13.732, lng: 100.772, r: 0.018, color: isDark ? '#1c2b29' : '#d8ebd4' }, // Suvarnabhumi zone
+                { lat: 13.541, lng: 101.023, r: 0.014, color: isDark ? '#1c2b29' : '#d8ebd4' }, // Rest area green
+                { lat: 13.348, lng: 101.080, r: 0.035, color: isDark ? '#1b2926' : '#dcebd5' }, // Khao Khiao forest
+                { lat: 13.150, lng: 101.045, r: 0.040, color: isDark ? '#1b2926' : '#dcebd5' }
+            ];
+            zones.forEach(z => {
+                const pos = latLngToScreen(z.lat, z.lng);
+                const radiusPx = z.r * Math.pow(2, mapView.zoom) * 256 / 360;
+                ctx.beginPath();
+                ctx.arc(pos.x, pos.y, radiusPx, 0, Math.PI * 2);
+                ctx.fillStyle = z.color;
+                ctx.fill();
+            });
+        }
+
+        function drawWaterFeatures(isDark) {
+            const waterColor = isDark ? '#11263c' : '#aadaff';
+            const waterStroke = isDark ? '#1d3b5c' : '#89c4f4';
+
+            // Gulf of Thailand (West side of Chon Buri -> Si Racha -> Pattaya)
+            ctx.beginPath();
+            const gulfPts = [
+                { lat: 13.50, lng: 100.65 },
+                { lat: 13.48, lng: 100.96 },
+                { lat: 13.36, lng: 100.92 },
+                { lat: 13.26, lng: 100.91 },
+                { lat: 13.10, lng: 100.88 },
+                { lat: 12.92, lng: 100.86 },
+                { lat: 12.85, lng: 100.65 }
+            ];
+            gulfPts.forEach((p, idx) => {
+                const s = latLngToScreen(p.lat, p.lng);
+                if (idx === 0) ctx.moveTo(s.x, s.y);
+                else ctx.lineTo(s.x, s.y);
+            });
+            ctx.closePath();
+            ctx.fillStyle = waterColor;
+            ctx.fill();
+
+            // Bang Pakong River (Crossing Motorway 7 around KM 46+200)
+            ctx.beginPath();
+            const riverPts = [
+                { lat: 13.72, lng: 101.01 },
+                { lat: 13.66, lng: 100.98 },
+                { lat: 13.6285, lng: 100.9645 }, // Bridge crossing
+                { lat: 13.57, lng: 100.94 },
+                { lat: 13.49, lng: 100.96 }
+            ];
+            riverPts.forEach((p, idx) => {
+                const s = latLngToScreen(p.lat, p.lng);
+                if (idx === 0) ctx.moveTo(s.x, s.y);
+                else ctx.lineTo(s.x, s.y);
+            });
+            ctx.strokeStyle = waterColor;
+            ctx.lineWidth = Math.max(8, mapView.zoom * 1.3);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+
+            // Label Bang Pakong River
+            const riverLabelPos = latLngToScreen(13.645, 100.982);
+            ctx.font = '500 11px Prompt, sans-serif';
+            ctx.fillStyle = isDark ? '#60a5fa' : '#2563eb';
+            ctx.fillText('แม่น้ำบางปะกง', riverLabelPos.x + 8, riverLabelPos.y);
+
+            // Bang Phra Reservoir (Near KM 78)
+            const resPos = latLngToScreen(13.215, 100.965);
+            const resR = 0.016 * Math.pow(2, mapView.zoom) * 256 / 360;
+            ctx.beginPath();
+            ctx.ellipse(resPos.x, resPos.y, resR * 1.3, resR * 0.85, 0.3, 0, Math.PI * 2);
+            ctx.fillStyle = waterColor;
+            ctx.fill();
+            ctx.strokeStyle = waterStroke;
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        function drawSecondaryRoads(isDark) {
+            const roadOuter = isDark ? '#2a3649' : '#d5d2cb';
+            const roadInner = isDark ? '#38465e' : '#ffffff';
+
+            const secondaryPaths = [
+                // Motorway 9 (Kanchanaphisek)
+                [ { lat: 13.80, lng: 100.73 }, { lat: 13.726, lng: 100.768 }, { lat: 13.64, lng: 100.74 } ],
+                // Bang Na - Trat / Burapha Withi Expressway
+                [ { lat: 13.66, lng: 100.75 }, { lat: 13.61, lng: 100.95 }, { lat: 13.42, lng: 101.00 } ],
+                // Highway 344 (Ban Bueng - Klaeng)
+                [ { lat: 13.41, lng: 100.99 }, { lat: 13.4095, lng: 101.0535 }, { lat: 13.38, lng: 101.18 } ],
+                // Highway 36 (Pong - Rayong)
+                [ { lat: 13.0065, lng: 100.9795 }, { lat: 12.96, lng: 101.12 } ]
+            ];
+
+            secondaryPaths.forEach(path => {
+                ctx.beginPath();
+                path.forEach((p, idx) => {
+                    const s = latLngToScreen(p.lat, p.lng);
+                    if (idx === 0) ctx.moveTo(s.x, s.y);
+                    else ctx.lineTo(s.x, s.y);
+                });
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = roadOuter;
+                ctx.lineWidth = 8;
+                ctx.stroke();
+
+                ctx.strokeStyle = roadInner;
+                ctx.lineWidth = 5;
+                ctx.stroke();
+            });
+        }
+
+        function drawMotorway7(isDark) {
+            const screenPts = ROUTE_WAYPOINTS.map(wp => ({
+                ...latLngToScreen(wp.lat, wp.lng),
+                km: wp.km
+            }));
+
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // Outer Highway Casing (Darker Border)
+            ctx.beginPath();
+            screenPts.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+            ctx.strokeStyle = isDark ? '#1e3a8a' : '#1d4ed8';
+            ctx.lineWidth = 14;
+            ctx.stroke();
+
+            // Inner Highway Base (Google Navigation Active Route Blue)
+            ctx.beginPath();
+            screenPts.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+            ctx.strokeStyle = '#3b82f6';
+            ctx.lineWidth = 9;
+            ctx.stroke();
+
+            // Traffic Overlay Segments (Green = Smooth, Amber = Toll Slowdown Zone)
+            for (let i = 0; i < screenPts.length - 1; i++) {
+                const p1 = screenPts[i];
+                const p2 = screenPts[i + 1];
+                const midKm = (p1.km + p2.km) / 2;
+
+                // Check if segment is near a Toll Plaza for Amber traffic tint
+                const nearToll = LOCKED_POIS.some(poi => poi.type === 'toll' && Math.abs(poi.km - midKm) < 1.2);
+                
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.strokeStyle = nearToll ? '#f59e0b' : '#10b981'; // Amber near toll, Emerald green on open road
+                ctx.lineWidth = 4;
+                ctx.stroke();
+            }
+
+            // Kilometer Milestone Markers every 5 KM when zoomed in
+            if (mapView.zoom >= 12.2) {
+                for (let km = 30; km <= 115; km += 5) {
+                    const geo = getGeoAtKm(km);
+                    const s = latLngToScreen(geo.lat, geo.lng);
+                    
+                    ctx.fillStyle = isDark ? 'rgba(15,23,42,0.85)' : 'rgba(255,255,255,0.9)';
+                    ctx.strokeStyle = isDark ? '#475569' : '#94a3b8';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.roundRect(s.x + 12, s.y - 9, 44, 18, 5);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.font = '600 10px "JetBrains Mono", monospace';
+                    ctx.fillStyle = isDark ? '#cbd5e1' : '#334155';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(`กม.${km}`, s.x + 34, s.y);
+                }
+            }
+        }
+
+        function drawLandmarks(isDark) {
+            MAP_LANDMARKS.forEach(lm => {
+                const s = latLngToScreen(lm.lat, lm.lng);
+                if (s.x < -150 || s.x > canvas.width + 150 || s.y < -100 || s.y > canvas.height + 100) return;
+
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'middle';
+
+                if (lm.type === 'interchange') {
+                    // Highway Shield Badge (Google Maps Style)
+                    ctx.fillStyle = '#ffffff';
+                    ctx.strokeStyle = '#334155';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.roundRect(s.x - 14, s.y - 10, 28, 20, 6);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.font = '700 10px "JetBrains Mono", monospace';
+                    ctx.fillStyle = '#0f172a';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(lm.badge, s.x, s.y + 0.5);
+
+                    if (mapView.zoom >= 11.5) {
+                        ctx.textAlign = 'left';
+                        ctx.font = '500 11px Prompt, sans-serif';
+                        ctx.fillStyle = isDark ? '#94a3b8' : '#475569';
+                        ctx.fillText(lm.text, s.x + 18, s.y);
+                    }
+                } else if (lm.type === 'district' || lm.type === 'city') {
+                    ctx.font = lm.type === 'city' ? '700 14px Prompt, sans-serif' : '600 12px Prompt, sans-serif';
+                    ctx.fillStyle = isDark ? '#cbd5e1' : '#334155';
+                    ctx.fillText(lm.text, s.x, s.y);
+                } else if (lm.type === 'poi' && mapView.zoom >= 12.5) {
+                    // Green POI Pill
+                    ctx.fillStyle = '#059669';
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.5;
+                    ctx.stroke();
+
+                    ctx.font = '500 11px Prompt, sans-serif';
+                    ctx.fillStyle = isDark ? '#6ee7b7' : '#065f46';
+                    ctx.fillText(lm.text, s.x + 10, s.y);
+                }
+            });
+        }
+
+        function drawPoiPins(isDark) {
+            const nextPoi = getNextPoi();
+
+            LOCKED_POIS.forEach(poi => {
+                const geo = getGeoAtKm(poi.km);
+                const s = latLngToScreen(geo.lat, geo.lng);
+
+                // Skip off-screen pins
+                if (s.x < -120 || s.x > canvas.width + 120 || s.y < -120 || s.y > canvas.height + 120) return;
+
+                const isNext = nextPoi && nextPoi.id === poi.id;
+                const isCam = poi.type === 'camera';
+                const pinColor = isCam ? '#ea4335' : '#1a73e8'; // Google Maps Red for Camera, Google Blue for Toll
+
+                // Radar Detection Zone Ring (1.5 km radius preview when approaching)
+                if (isNext) {
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, 26, 0, Math.PI * 2);
+                    ctx.fillStyle = isCam ? 'rgba(234, 67, 53, 0.18)' : 'rgba(26, 115, 232, 0.18)';
+                    ctx.fill();
+                }
+
+                // Draw Google Maps Teardrop Pin
+                const pinScale = isNext ? 1.2 : 1.0;
+                ctx.save();
+                ctx.translate(s.x, s.y);
+                ctx.scale(pinScale, pinScale);
+
+                // Pin Drop Shadow
+                ctx.beginPath();
+                ctx.ellipse(0, 2, 7, 3, 0, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0,0,0,0.3)';
+                ctx.fill();
+
+                // Teardrop Shape
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.bezierCurveTo(-12, -14, -14, -28, 0, -28);
+                ctx.bezierCurveTo(14, -28, 12, -14, 0, 0);
+                ctx.fillStyle = pinColor;
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Inner White Circle + Icon Glyph
+                ctx.beginPath();
+                ctx.arc(0, -18, 5.5, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+
+                ctx.fillStyle = pinColor;
+                ctx.font = '900 8px "Font Awesome 6 Free"';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(isCam ? '\uf03d' : '\uf555', 0, -18); // Video camera or archway icon
+
+                ctx.restore();
+
+                // Pin Label Card (Google Maps Callout)
+                if (mapView.zoom >= 11.4 || isNext) {
+                    const labelText = `${poi.name} (${formatKm(poi.km)})`;
+                    ctx.font = isNext ? '700 11px Prompt, sans-serif' : '600 10px Prompt, sans-serif';
+                    const textWidth = ctx.measureText(labelText).width;
+                    const boxW = textWidth + 14;
+                    const boxH = 20;
+                    const boxX = s.x - boxW / 2;
+                    const boxY = s.y - (36 * pinScale) - boxH;
+
+                    ctx.fillStyle = isNext 
+                        ? (isCam ? '#b91c1c' : '#1d4ed8') 
+                        : (isDark ? 'rgba(15, 23, 42, 0.92)' : 'rgba(255, 255, 255, 0.95)');
+                    ctx.strokeStyle = isNext ? '#ffffff' : (isDark ? '#475569' : '#cbd5e1');
+                    ctx.lineWidth = isNext ? 1.5 : 1;
+
+                    ctx.beginPath();
+                    ctx.roundRect(boxX, boxY, boxW, boxH, 6);
+                    ctx.fill();
+                    ctx.stroke();
+
+                    ctx.fillStyle = isNext ? '#ffffff' : (isDark ? '#f8fafc' : '#0f172a');
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(labelText, s.x, boxY + boxH / 2);
+                }
+            });
+        }
+
+        function drawNavigationArrow() {
+            const carGeo = getGeoAtKm(state.currentKm);
+            const s = latLngToScreen(carGeo.lat, carGeo.lng);
+
+            ctx.save();
+            ctx.translate(s.x, s.y);
+
+            // Outer Pulsing Accuracy Halo (Google Navigation Style)
+            const pulseRadius = 26 + Math.sin(performance.now() / 250) * 4;
+            ctx.beginPath();
+            ctx.arc(0, 0, pulseRadius, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(26, 115, 232, 0.22)';
+            ctx.fill();
+
+            // White Navigation Puck Circle with Drop Shadow
+            ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+            ctx.shadowBlur = 8;
+            ctx.shadowOffsetY = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, 17, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffffff';
+            ctx.fill();
+            ctx.shadowColor = 'transparent';
+
+            // Rotate to Highway Heading Angle
+            ctx.rotate(carGeo.angle);
+
+            // Google Blue Navigation Chevron Arrow
+            ctx.beginPath();
+            ctx.moveTo(10, 0);     // Tip of arrow
+            ctx.lineTo(-7, -7);    // Left wing
+            ctx.lineTo(-3.5, 0);   // Inner notch
+            ctx.lineTo(-7, 7);     // Right wing
+            ctx.closePath();
+            ctx.fillStyle = '#1a73e8';
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        // =========================================================================
+        // 6. INTERACTIVE PAN & ZOOM HANDLERS (MOUSE & TOUCH)
+        // =========================================================================
+        function setupMapInteractions() {
+            canvas.addEventListener('mousedown', e => {
+                mapView.isDragging = true;
+                mapView.autoFollow = false;
+                updateRecenterButton();
+                mapView.dragStartX = e.clientX;
+                mapView.dragStartY = e.clientY;
+                mapView.dragStartLat = mapView.centerLat;
+                mapView.dragStartLng = mapView.centerLng;
+            });
+
+            window.addEventListener('mousemove', e => {
+                if (!mapView.isDragging) return;
+                const scale = Math.pow(2, mapView.zoom) * 256 / 360;
+                const cosLat = Math.cos(13.4 * Math.PI / 180);
+                const dx = e.clientX - mapView.dragStartX;
+                const dy = e.clientY - mapView.dragStartY;
+                mapView.centerLng = mapView.dragStartLng - dx / (scale * cosLat);
+                mapView.centerLat = mapView.dragStartLat + dy / scale;
+                drawMap();
+            });
+
+            window.addEventListener('mouseup', () => {
+                mapView.isDragging = false;
+            });
+
+            // Wheel Zoom
+            canvas.addEventListener('wheel', e => {
+                e.preventDefault();
+                const factor = e.deltaY < 0 ? 1.15 : 0.87;
+                zoomMap(factor);
+            }, { passive: false });
+
+            // Touch Pan
+            canvas.addEventListener('touchstart', e => {
+                if (e.touches.length === 1) {
+                    mapView.isDragging = true;
+                    mapView.autoFollow = false;
+                    updateRecenterButton();
+                    mapView.dragStartX = e.touches[0].clientX;
+                    mapView.dragStartY = e.touches[0].clientY;
+                    mapView.dragStartLat = mapView.centerLat;
+                    mapView.dragStartLng = mapView.centerLng;
+                }
+            }, { passive: true });
+
+            canvas.addEventListener('touchmove', e => {
+                if (!mapView.isDragging || e.touches.length !== 1) return;
+                const scale = Math.pow(2, mapView.zoom) * 256 / 360;
+                const cosLat = Math.cos(13.4 * Math.PI / 180);
+                const dx = e.touches[0].clientX - mapView.dragStartX;
+                const dy = e.touches[0].clientY - mapView.dragStartY;
+                mapView.centerLng = mapView.dragStartLng - dx / (scale * cosLat);
+                mapView.centerLat = mapView.dragStartLat + dy / scale;
+                drawMap();
+            }, { passive: true });
+
+            canvas.addEventListener('touchend', () => {
+                mapView.isDragging = false;
+            });
+        }
+
+        function zoomMap(factor) {
+            const delta = Math.log2(factor);
+            mapView.zoom = Math.max(9.8, Math.min(16.2, mapView.zoom + delta));
+            drawMap();
+        }
+
+        function recenterMap() {
+            mapView.autoFollow = true;
+            const carGeo = getGeoAtKm(state.currentKm);
+            mapView.centerLat = carGeo.lat;
+            mapView.centerLng = carGeo.lng;
+            if (mapView.zoom < 13.0) mapView.zoom = 13.6;
+            updateRecenterButton();
+            drawMap();
+            showToast('ติดตามตำแหน่งรถอัตโนมัติ');
+        }
+
+        function updateRecenterButton() {
+            const btn = document.getElementById('btn-recenter');
+            if (mapView.autoFollow) {
+                btn.className = 'w-11 h-11 rounded-full bg-[#1a73e8] text-white shadow-xl border border-blue-400 flex items-center justify-center transition';
+            } else {
+                btn.className = 'w-11 h-11 rounded-full bg-white text-slate-700 shadow-xl border border-slate-200 flex items-center justify-center hover:bg-slate-50 transition';
+            }
+        }
+
+        function toggleMapTheme() {
+            state.darkMode = !state.darkMode;
+            const icon = document.getElementById('theme-icon');
+            icon.className = state.darkMode ? 'fa-solid fa-sun text-amber-500 text-base' : 'fa-solid fa-moon text-base';
+            drawMap();
+            showToast(state.darkMode ? 'เปลี่ยนเป็นแผนที่โหมดกลางคืน' : 'เปลี่ยนเป็นแผนที่โหมดกลางวัน');
+        }
+
+        // =========================================================================
+        // 7. AUDIO SYSTEM (WEB AUDIO RADAR BEEP + THAI VOICE SPEECH)
+        // =========================================================================
+        function initAudio() {
+            if (!audioCtx) {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AC();
+            }
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playRadarBeep(urgent = false) {
+            if (!state.audioEnabled) return;
+            try {
+                initAudio();
+                const now = audioCtx.currentTime;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = urgent ? 'sawtooth' : 'sine';
+                osc.frequency.setValueAtTime(urgent ? 960 : 740, now);
+                if (urgent) osc.frequency.exponentialRampToValueAtTime(1350, now + 0.14);
+
+                gain.gain.setValueAtTime(0.16, now);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.19);
+            } catch (e) {}
+        }
+
+        function speakThai(text) {
+            if (!state.audioEnabled || !('speechSynthesis' in window)) return;
+            try {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = 'th-TH';
+                u.rate = 1.05;
+                window.speechSynthesis.speak(u);
+            } catch (e) {}
+        }
+
+        function toggleAudio() {
+            state.audioEnabled = !state.audioEnabled;
+            const btn = document.getElementById('btn-audio');
+            const icon = document.getElementById('audio-icon');
+            const label = document.getElementById('audio-label');
+
+            if (state.audioEnabled) {
+                initAudio();
+                btn.className = 'h-11 px-3.5 rounded-2xl bg-[#1a73e8] hover:bg-blue-700 text-white shadow-lg flex items-center gap-2 text-xs font-semibold transition';
+                icon.className = 'fa-solid fa-volume-high';
+                label.textContent = 'เสียงเตือนเปิด';
+                showToast('เปิดเสียงพูดและสัญญาณเตือนแล้ว');
+            } else {
+                if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+                btn.className = 'h-11 px-3.5 rounded-2xl bg-white/95 hover:bg-white text-slate-600 shadow-lg border border-slate-200/80 flex items-center gap-2 text-xs font-semibold transition';
+                icon.className = 'fa-solid fa-volume-xmark';
+                label.textContent = 'ปิดเสียง';
+                showToast('ปิดเสียงเตือนชั่วคราว');
+            }
+        }
+
+        function testAudioAlert() {
+            if (!state.audioEnabled) toggleAudio();
+            playRadarBeep(true);
+            speakThai('ทดสอบระบบนำทาง ระวัง กล้องตรวจจับความเร็วข้างหน้า จำกัดความเร็ว 120 กิโลเมตรต่อชั่วโมง');
+            showToast('กำลังทดสอบเสียงพูดภาษาไทย');
+        }
+
+        // =========================================================================
+        // 8. SIMULATION ENGINE & NAVIGATION HUD LOGIC
+        // =========================================================================
+        function toggleSimulation() {
+            initAudio();
+            state.isRunning = !state.isRunning;
+            const btn = document.getElementById('btn-sim-toggle');
+            const icon = document.getElementById('sim-play-icon');
+            const text = document.getElementById('sim-play-text');
+
+            if (state.isRunning) {
+                if (state.targetSpeed === 0) setTargetSpeed(90);
+                state.lastFrameTime = performance.now();
+                btn.className = 'h-10 px-4 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white text-xs sm:text-sm font-bold shadow-md flex items-center gap-2 shrink-0 transition';
+                icon.className = 'fa-solid fa-pause';
+                text.textContent = 'หยุดชั่วคราว';
+            } else {
+                btn.className = 'h-10 px-4 rounded-2xl bg-[#1a73e8] hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-md flex items-center gap-2 shrink-0 transition';
+                icon.className = 'fa-solid fa-play';
+                text.textContent = 'เริ่มขับจำลอง';
+            }
+        }
+
+        function setTargetSpeed(val) {
+            const speed = Math.max(0, Math.min(160, Number(val)));
+            state.targetSpeed = speed;
+            document.getElementById('speed-slider').value = speed;
+            document.getElementById('slider-speed-label').textContent = `${speed} กม./ชม.`;
+            if (!state.isRunning) {
+                state.currentSpeed = speed;
+                updateHUD();
+            }
+        }
+
+        function setTimeScale(scale) {
+            state.timeScale = scale;
+            [1, 5, 10].forEach(s => {
+                const el = document.getElementById(`scale-${s}`);
+                el.className = s === scale
+                    ? 'px-2.5 py-1 rounded-xl text-xs font-mono font-bold bg-[#1a73e8] text-white transition'
+                    : 'px-2.5 py-1 rounded-xl text-xs font-mono font-bold text-slate-600 hover:text-slate-900 transition';
+            });
+        }
+
+        function toggleDirection() {
+            state.direction = state.direction === 'outbound' ? 'inbound' : 'outbound';
+            state.announced1km.clear();
+            state.announced400m.clear();
+            document.getElementById('dir-label').textContent = state.direction === 'outbound'
+                ? 'ขาออก (กทม.→พัทยา)'
+                : 'ขาเข้า (พัทยา→กทม.)';
+            renderTimelineDrawer();
+            updateHUD();
+            drawMap();
+        }
+
+        function jumpToKm(km, speed = null) {
+            initAudio();
+            state.currentKm = km;
+            state.announced1km.clear();
+            state.announced400m.clear();
+            if (speed !== null) {
+                setTargetSpeed(speed);
+                state.currentSpeed = speed;
+            }
+            mapView.autoFollow = true;
+            updateRecenterButton();
+            if (!state.isRunning) toggleSimulation();
+            updateHUD();
+            showToast(`เริ่มจำลองที่ ${formatKm(km)}`);
+        }
+
+        function getNextPoi() {
+            if (state.direction === 'outbound') {
+                return LOCKED_POIS.find(p => p.km >= state.currentKm - 0.04) || null;
+            } else {
+                for (let i = LOCKED_POIS.length - 1; i >= 0; i--) {
+                    if (LOCKED_POIS[i].km <= state.currentKm + 0.04) return LOCKED_POIS[i];
+                }
+                return null;
+            }
+        }
+
+        function simulationLoop(timestamp) {
+            if (!state.lastFrameTime) state.lastFrameTime = timestamp;
+            const dt = (timestamp - state.lastFrameTime) / 1000;
+            state.lastFrameTime = timestamp;
+
+            if (state.isRunning) {
+                // Smooth acceleration & braking
+                const rate = state.targetSpeed > state.currentSpeed ? 26 : 42;
+                if (Math.abs(state.targetSpeed - state.currentSpeed) < 0.5) {
+                    state.currentSpeed = state.targetSpeed;
+                } else if (state.targetSpeed > state.currentSpeed) {
+                    state.currentSpeed = Math.min(state.targetSpeed, state.currentSpeed + rate * dt);
+                } else {
+                    state.currentSpeed = Math.max(state.targetSpeed, state.currentSpeed - rate * dt);
+                }
+
+                // Advance KM position
+                const kmDelta = (state.currentSpeed / 3600) * dt * state.timeScale;
+                if (state.direction === 'outbound') {
+                    state.currentKm += kmDelta;
+                    if (state.currentKm >= 120.0) {
+                        state.currentKm = 120.0;
+                        setTargetSpeed(0);
+                        state.currentSpeed = 0;
+                        toggleSimulation();
+                        showToast('ถึงปลายทางจำลอง กม.120+000 (มุ่งหน้าพัทยา)');
+                    }
+                } else {
+                    state.currentKm -= kmDelta;
+                    if (state.currentKm <= 26.0) {
+                        state.currentKm = 26.0;
+                        setTargetSpeed(0);
+                        state.currentSpeed = 0;
+                        toggleSimulation();
+                        showToast('ถึงปลายทางจำลอง กม.26+000 (ลาดกระบัง)');
+                    }
+                }
+            }
+
+            // Smoothly follow navigation arrow if autoFollow is active
+            if (mapView.autoFollow) {
+                const carGeo = getGeoAtKm(state.currentKm);
+                mapView.centerLat += (carGeo.lat - mapView.centerLat) * 0.18;
+                mapView.centerLng += (carGeo.lng - mapView.centerLng) * 0.18;
+            }
+
+            updateHUD(timestamp);
+            drawMap();
+            requestAnimationFrame(simulationLoop);
+        }
+
+        function updateHUD(timestamp = performance.now()) {
+            const speedInt = Math.round(state.currentSpeed);
+            const kmText = formatKm(state.currentKm);
+
+            document.getElementById('hud-speed').textContent = speedInt;
+            document.getElementById('top-km-readout').textContent = kmText;
+            document.getElementById('mobile-km-readout').textContent = kmText;
+
+            const nextPoi = getNextPoi();
+            const distKm = nextPoi ? Math.abs(nextPoi.km - state.currentKm) : null;
+
+            // Determine active speed limit & alert severity
+            let activeLimit = 120;
+            let alertLevel = 'normal'; // 'normal', 'approaching', 'overspeed'
+
+            if (nextPoi && distKm <= 1.5) {
+                activeLimit = nextPoi.limit;
+
+                // Voice announcements at 1.0 km and 0.4 km
+                if (state.isRunning && state.currentSpeed > 10) {
+                    if (distKm <= 1.05 && distKm > 0.45 && !state.announced1km.has(nextPoi.id)) {
+                        state.announced1km.add(nextPoi.id);
+                        playRadarBeep(false);
+                        if (nextPoi.type === 'camera') {
+                            speakThai(`ข้างหน้า 1 กิโลเมตร ${nextPoi.name} จำกัดความเร็ว ${nextPoi.limit} กิโลเมตรต่อชั่วโมง`);
+                        } else {
+                            speakThai(`ข้างหน้า 1 กิโลเมตร ${nextPoi.name} กรุณาชะลอความเร็วไม่เกิน ${nextPoi.limit} กิโลเมตรต่อชั่วโมง`);
+                        }
+                    } else if (distKm <= 0.45 && !state.announced400m.has(nextPoi.id)) {
+                        state.announced400m.add(nextPoi.id);
+                        playRadarBeep(state.currentSpeed > activeLimit);
+                        if (state.currentSpeed > activeLimit) {
+                            speakThai(`ลดความเร็ว ความเร็วเกินกำหนด ${activeLimit} กิโลเมตรต่อชั่วโมง`);
+                        }
+                    }
+                }
+
+                alertLevel = state.currentSpeed > activeLimit ? 'overspeed' : 'approaching';
+            } else if (state.currentSpeed > 120) {
+                alertLevel = 'overspeed';
+            }
+
+            // Update Speed Limit Sign
+            document.getElementById('limit-value').textContent = activeLimit;
+
+            // Update Top Google Navigation Banner
+            const navBanner = document.getElementById('nav-banner');
+            const navIcon = document.getElementById('nav-icon');
+            const navDist = document.getElementById('nav-distance');
+            const navTitle = document.getElementById('nav-title');
+            const navSub = document.getElementById('nav-subtitle');
+            const speedWidget = document.getElementById('speed-widget');
+            const hudSpeedEl = document.getElementById('hud-speed');
+
+            if (nextPoi) {
+                navDist.textContent = distKm >= 1 ? `${distKm.toFixed(1)} กม.` : `${Math.round(distKm * 1000)} ม.`;
+                navTitle.textContent = `${nextPoi.name} (${formatKm(nextPoi.km)})`;
+                navSub.textContent = `${nextPoi.desc} • จำกัด ${nextPoi.limit} กม./ชม.`;
+                navIcon.className = nextPoi.type === 'camera'
+                    ? 'fa-solid fa-video text-2xl sm:text-3xl'
+                    : 'fa-solid fa-archway text-2xl sm:text-3xl';
+            } else {
+                navDist.textContent = 'สุดเส้นทาง';
+                navTitle.textContent = 'สิ้นสุดระยะมอเตอร์เวย์สาย 7';
+                navSub.textContent = 'ขับขี่ปลอดภัยตลอดการเดินทาง';
+                navIcon.className = 'fa-solid fa-flag-checkered text-2xl sm:text-3xl';
+            }
+
+            if (alertLevel === 'overspeed') {
+                // Red Overspeed Alert
+                navBanner.className = 'pointer-events-auto flex-1 bg-red-600 text-white rounded-2xl shadow-xl border-2 border-white px-4 py-3 flex items-center justify-between gap-3 animate-pulse-fast';
+                speedWidget.className = 'bg-red-600 border-2 border-white rounded-3xl px-4 py-2.5 shadow-2xl flex items-center gap-3.5 animate-pulse-fast';
+                hudSpeedEl.className = 'font-mono text-3xl sm:text-4xl font-extrabold text-white leading-none';
+
+                if (state.isRunning && timestamp - state.lastBeepTime > 650) {
+                    state.lastBeepTime = timestamp;
+                    playRadarBeep(true);
+                }
+            } else if (alertLevel === 'approaching') {
+                // Amber Approaching Camera / Toll Zone
+                navBanner.className = 'pointer-events-auto flex-1 bg-amber-600 text-white rounded-2xl shadow-xl border border-amber-300 px-4 py-3 flex items-center justify-between gap-3 transition-colors duration-300';
+                speedWidget.className = 'bg-white/95 backdrop-blur-md border-2 border-amber-500 rounded-3xl px-4 py-2.5 shadow-2xl flex items-center gap-3.5 transition-all duration-200';
+                hudSpeedEl.className = 'font-mono text-3xl sm:text-4xl font-extrabold text-amber-600 leading-none';
+            } else {
+                // Classic Google Navigation Deep Green Banner
+                navBanner.className = 'pointer-events-auto flex-1 bg-[#0f5338] text-white rounded-2xl shadow-xl border border-white/15 px-4 py-3 flex items-center justify-between gap-3 transition-colors duration-300';
+                speedWidget.className = 'bg-white/95 backdrop-blur-md border-2 border-slate-200 rounded-3xl px-4 py-2.5 shadow-2xl flex items-center gap-3.5 transition-all duration-200';
+                hudSpeedEl.className = 'font-mono text-3xl sm:text-4xl font-extrabold text-slate-900 leading-none';
+            }
+
+            if (state.drawerOpen) updateTimelineDrawerDistances();
+        }
+
+        // =========================================================================
+        // 9. READ-ONLY ROUTE TIMELINE DRAWER
+        // =========================================================================
+        function toggleDrawer() {
+            state.drawerOpen = !state.drawerOpen;
+            const drawer = document.getElementById('timeline-drawer');
+            if (state.drawerOpen) {
+                renderTimelineDrawer();
+                drawer.classList.remove('translate-x-[120%]', 'opacity-0');
+            } else {
+                drawer.classList.add('translate-x-[120%]', 'opacity-0');
+            }
+        }
+
+        function setFilter(f) {
+            state.filter = f;
+            ['all', 'camera', 'toll'].forEach(id => {
+                const btn = document.getElementById(`filter-${id}`);
+                btn.className = id === f
+                    ? 'flex-1 py-1.5 rounded-xl bg-white text-slate-900 shadow-sm'
+                    : 'flex-1 py-1.5 rounded-xl text-slate-600 hover:text-slate-900';
+            });
+            renderTimelineDrawer();
+        }
+
+        function renderTimelineDrawer() {
+            const listEl = document.getElementById('timeline-list');
+            let items = [...LOCKED_POIS];
+            if (state.direction === 'inbound') items.reverse();
+            if (state.filter !== 'all') items = items.filter(p => p.type === state.filter);
+
+            listEl.innerHTML = items.map(poi => {
+                const isCam = poi.type === 'camera';
+                return `
+                <div id="drawer-item-${poi.id}" onclick="jumpToKm(${Math.max(26, poi.km - 0.8)})" 
+                     class="flex items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-slate-50 hover:bg-blue-50 border border-slate-200/80 cursor-pointer transition">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <div class="w-8 h-8 rounded-full ${isCam ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'} flex items-center justify-center shrink-0 text-xs">
+                            <i class="fa-solid ${isCam ? 'fa-video' : 'fa-archway'}"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="font-semibold text-xs text-slate-900 truncate">${poi.name}</div>
+                            <div class="text-[11px] text-slate-500 truncate">${poi.desc}</div>
+                        </div>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <div class="font-mono text-xs font-bold text-slate-800">${formatKm(poi.km)}</div>
+                        <div id="drawer-dist-${poi.id}" class="font-mono text-[10px] text-slate-500 mt-0.5">--</div>
+                    </div>
+                </div>`;
+            }).join('');
+            updateTimelineDrawerDistances();
+        }
+
+        function updateTimelineDrawerDistances() {
+            LOCKED_POIS.forEach(poi => {
+                const row = document.getElementById(`drawer-item-${poi.id}`);
+                const distEl = document.getElementById(`drawer-dist-${poi.id}`);
+                if (!row || !distEl) return;
+
+                const diff = state.direction === 'outbound'
+                    ? poi.km - state.currentKm
+                    : state.currentKm - poi.km;
+
+                if (diff < -0.05) {
+                    row.classList.add('opacity-45');
+                    distEl.textContent = 'ผ่านแล้ว';
+                    distEl.className = 'text-[10px] text-slate-400 mt-0.5';
+                } else {
+                    row.classList.remove('opacity-45');
+                    distEl.textContent = diff >= 1 ? `อีก ${diff.toFixed(1)} กม.` : `อีก ${Math.round(diff * 1000)} ม.`;
+                    distEl.className = diff <= 1.5
+                        ? 'font-mono text-[10px] font-bold text-blue-600 mt-0.5'
+                        : 'font-mono text-[10px] text-slate-500 mt-0.5';
+                }
+            });
+        }
+
+        // Custom Toast Helper
+        let toastTimer = null;
+        function showToast(msg) {
+            const box = document.getElementById('toast-box');
+            document.getElementById('toast-msg').textContent = msg;
+            box.classList.remove('-translate-y-10', 'opacity-0');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                box.classList.add('-translate-y-10', 'opacity-0');
+            }, 2500);
+        }
+
+        // =========================================================================
+        // 10. INITIALIZE APP ON WINDOW LOAD
+        // =========================================================================
+        window.addEventListener('resize', resizeCanvas);
+        window.onload = function () {
+            setupMapInteractions();
+            resizeCanvas();
+            updateHUD();
+            requestAnimationFrame(simulationLoop);
+        };
+    </script>
+</body>
+</html>
